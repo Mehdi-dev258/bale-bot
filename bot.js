@@ -1,19 +1,16 @@
-// bot.js - نسخه مناسب برای GitHub Actions
+// bot.js - نسخه بهینه برای GitHub Actions
 const fs = require('fs');
 const path = require('path');
 
-// تنظیمات
 const BOT_TOKEN = '816023557:5vHkipUO5yquItXxCcvjORH6LpvJkXqxLoA';
 const API_URL = `https://tapi.bale.ai/bot${BOT_TOKEN}/`;
 const OFFSET_FILE = path.join(__dirname, 'last_update.txt');
 
-// تابع لاگ
 function log(msg, type = 'INFO') {
     const time = new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     console.log(`[${time}] [${type}] ${msg}`);
 }
 
-// خواندن آخرین آپدیت پردازش شده از فایل
 function getLastUpdateId() {
     try {
         if (fs.existsSync(OFFSET_FILE)) {
@@ -25,7 +22,6 @@ function getLastUpdateId() {
     return 0;
 }
 
-// ذخیره آخرین آپدیت پردازش شده
 function saveLastUpdateId(updateId) {
     try {
         fs.writeFileSync(OFFSET_FILE, updateId.toString());
@@ -34,14 +30,21 @@ function saveLastUpdateId(updateId) {
     }
 }
 
-// دریافت آپدیت‌ها
 async function getUpdates(offset) {
-    const url = `${API_URL}getUpdates?offset=${offset}&timeout=5`; // تایم‌اوت کوتاه برای Actions
+    // تایم‌اوت ۳۰ ثانیه - حداکثر زمان مجاز در Actions
+    const url = `${API_URL}getUpdates?offset=${offset}&timeout=25`; 
+    
+    // استفاده از AbortController برای timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 28000);
     
     try {
         const response = await fetch(url, {
-            headers: { 'Content-Type': 'application/json' }
+            headers: { 'Content-Type': 'application/json' },
+            signal: controller.signal
         });
+        
+        clearTimeout(timeoutId);
         
         if (!response.ok) {
             throw new Error(`HTTP Error: ${response.status}`);
@@ -49,12 +52,16 @@ async function getUpdates(offset) {
         
         return await response.json();
     } catch (error) {
-        log(`خطا در دریافت آپدیت: ${error.message}`, 'ERROR');
+        clearTimeout(timeoutId);
+        if (error.name === 'AbortError') {
+            log('تایم‌اوت درخواست - طبیعی در Actions', 'WARN');
+        } else {
+            log(`خطا در دریافت آپدیت: ${error.message}`, 'ERROR');
+        }
         return null;
     }
 }
 
-// ارسال پیام
 async function sendMessage(chatId, text) {
     try {
         const response = await fetch(`${API_URL}sendMessage`, {
@@ -62,80 +69,98 @@ async function sendMessage(chatId, text) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 chat_id: chatId,
-                text: text
+                text: text,
+                parse_mode: 'HTML'
             })
         });
         
-        const result = await response.json();
-        if (!result.ok) {
-            log(`خطای API بله: ${result.description}`, 'ERROR');
+        const data = await response.json();
+        
+        if (!data.ok) {
+            log(`خطا در ارسال پیام: ${data.description}`, 'ERROR');
+            return false;
         }
-        return result;
+        
+        return true;
     } catch (error) {
         log(`خطا در ارسال پیام: ${error.message}`, 'ERROR');
-        return null;
+        return false;
     }
 }
 
-// پردازش پیام
-async function processMessage(msg) {
+async function processUpdate(update) {
+    if (!update.message || !update.message.text) return;
+    
+    const msg = update.message;
     const chatId = msg.chat.id;
-    const text = msg.text || '';
-    const name = msg.from?.first_name || 'ناشناس';
+    const text = msg.text;
     
-    log(`پیام از ${name} (${chatId}): ${text}`);
+    log(`پیام از ${chatId}: ${text}`);
     
-    if (text === '/start') {
-        await sendMessage(chatId, `👋 سلام ${name}!\n✅ ربات فعال است (اجرا توسط GitHub Actions)`);
-    } 
-    else if (text === '/info') {
-        await sendMessage(chatId, `🆔 Chat ID: \`${chatId}\``);
-    } 
-    else if (text === '/help') {
-        await sendMessage(chatId, "📋 دستورات:\n/start\n/info\n/ping\n/help");
-    } 
-    else if (text === '/ping') {
-        await sendMessage(chatId, "🏓 Pong! از GitHub Actions");
-    } 
-    else if (text.startsWith('/')) {
-        await sendMessage(chatId, "❓ دستور نامعتبر");
-    } 
-    else {
-        await sendMessage(chatId, `📝 نوشتید: ${text}\n_(پاسخ از GitHub Actions)_`);
+    // منطق پاسخگویی
+    let reply = '';
+    if (text.includes('سلام')) {
+        reply = 'سلام! چطور میتونم کمکت کنم؟ 👋';
+    } else if (text.includes('ربات')) {
+        reply = 'من یک ربات هستم که روی GitHub Actions اجرا میشم! 🤖';
+    } else {
+        reply = 'پیامت رو دریافت کردم: ' + text;
     }
+    
+    await sendMessage(chatId, reply);
 }
 
-// تابع اصلی
 async function main() {
-    log("🚀 شروع اجرای ربات در GitHub Actions", 'SUCCESS');
+    log('🚀 شروع اجرای ربات (GitHub Actions Mode)');
     
-    let lastUpdate = getLastUpdateId();
-    log(`آخرین آپدیت پردازش شده: ${lastUpdate}`);
+    const startTime = Date.now();
+    const maxRunTime = 50000; // حداکثر ۵۰ ثانیه (کمتر از محدودیت ۶۰ ثانیه Actions)
+    let lastUpdateId = getLastUpdateId();
+    let processedCount = 0;
     
-    const updates = await getUpdates(lastUpdate + 1);
-    
-    if (updates && updates.ok && updates.result && updates.result.length > 0) {
-        log(`📨 ${updates.result.length} پیام جدید دریافت شد`, 'SUCCESS');
+    // حلقه اصلی - تا زمانی که وقت هست ادامه بده
+    while (Date.now() - startTime < maxRunTime) {
+        log(`📥 دریافت آپدیت‌ها با offset: ${lastUpdateId}`);
         
-        for (const update of updates.result) {
-            lastUpdate = update.update_id;
-            
-            if (update.message) {
-                await processMessage(update.message);
-            }
+        const result = await getUpdates(lastUpdateId);
+        
+        if (!result || !result.ok) {
+            log('پاسخی دریافت نشد یا خطا در API', 'WARN');
+            break;
         }
         
-        saveLastUpdateId(lastUpdate);
-        log(`✅ آپدیت ${lastUpdate} ذخیره شد`, 'SUCCESS');
-    } else {
-        log("📭 پیام جدیدی وجود ندارد", 'INFO');
+        const updates = result.result || [];
+        
+        if (updates.length === 0) {
+            log('هیچ آپدیت جدیدی نیست');
+            break; // اگر آپدیت نیست، از حلقه خارج شو
+        }
+        
+        log(`📨 ${updates.length} آپدیت جدید دریافت شد`);
+        
+        for (const update of updates) {
+            await processUpdate(update);
+            lastUpdateId = Math.max(lastUpdateId, update.update_id + 1);
+            processedCount++;
+        }
+        
+        saveLastUpdateId(lastUpdateId);
+        
+        // اگر تعداد زیادی آپدیت هست، ادامه بده
+        if (updates.length < 10) {
+            break; // آپدیت‌ها تموم شده
+        }
     }
     
-    log("🏁 اجرای ربات به پایان رسید", 'SUCCESS');
+    log(`✅ پایان اجرا - ${processedCount} پیام پردازش شد`);
+    
+    // حتماً آخرین آفست رو ذخیره کن
+    saveLastUpdateId(lastUpdateId);
 }
 
-// اجرا
+// اجرای اصلی با هندل کردن خطا
 main().catch(error => {
-    log(`خطای مرگبار: ${error.message}`, 'ERROR');
+    log(`❌ خطای بحرانی: ${error.message}`, 'ERROR');
+    console.error(error.stack);
     process.exit(1);
 });
