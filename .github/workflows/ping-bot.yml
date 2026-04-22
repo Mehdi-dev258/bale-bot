@@ -3,25 +3,50 @@ name: Test Bale Bot Webhook
 on:
   workflow_dispatch:        # اجرای دستی
   schedule:
-    - cron: '*/2 * * * *'   # هر ۲ دقیقه
+    - cron: '*/10 * * * *'  # هر ۱۰ دقیقه
 
 jobs:
   test-bot:
     runs-on: ubuntu-latest
     
     steps:
-    - name: Set Webhook
+    - name: 1️⃣ Set Webhook
       run: |
-        curl -s "https://tapi.bale.ai/bot816023557:5vHkipUO5yquItXxCcvjORH6LpvJkXqxLoA/setWebhook?url=https://ae4a562f.coinsurf.pages.dev/bot"
+        echo "🔗 تنظیم وب‌هوک..."
+        RESPONSE=$(curl -s "https://tapi.bale.ai/bot816023557:5vHkipUO5yquItXxCcvjORH6LpvJkXqxLoA/setWebhook?url=https://ae4a562f.coinsurf.pages.dev/bot")
+        echo "📋 پاسخ: $RESPONSE"
         
-    - name: Send Test to Webhook
+        # بررسی موفقیت
+        if echo "$RESPONSE" | grep -q '"ok":true'; then
+          echo "✅ وب‌هوک با موفقیت تنظیم شد!"
+        else
+          echo "❌ خطا در تنظیم وب‌هوک!"
+        fi
+        echo ""
+        
+    - name: 2️⃣ Get Webhook Info
       run: |
-        curl -s -X POST "https://ae4a562f.coinsurf.pages.dev/bot" \
+        echo "📊 وضعیت فعلی وب‌هوک:"
+        curl -s "https://tapi.bale.ai/bot816023557:5vHkipUO5yquItXxCcvjORH6LpvJkXqxLoA/getWebhookInfo" | python3 -m json.tool
+        echo ""
+        
+    - name: 3️⃣ Send Test to Webhook
+      run: |
+        echo "📤 ارسال پیام تست به وب‌هوک..."
+        RESPONSE=$(curl -s -X POST "https://ae4a562f.coinsurf.pages.dev/bot" \
           -H "Content-Type: application/json" \
-          -d '{"message":{"chat":{"id":556535576},"text":"/ping","from":{"first_name":"Action"}}}'
+          -d '{"message":{"chat":{"id":556535576},"text":"/ping","from":{"first_name":"GitHubAction"}}}')
+        echo "📋 پاسخ وب‌هوک: $RESPONSE"
+        echo ""
         
-    - name: Send Result to You
+    - name: 4️⃣ Send Result to Bale
       run: |
+        echo "📨 ارسال نتیجه به ربات..."
         curl -s "https://tapi.bale.ai/bot816023557:5vHkipUO5yquItXxCcvjORH6LpvJkXqxLoA/sendMessage" \
           -H "Content-Type: application/json" \
-          -d '{"chat_id":556535576,"text":"✅ تست '$(date +%H:%M)'"}'
+          -d '{"chat_id":556535576,"text":"✅ تست خودکار: '$(date +%H:%M)'"}'
+        echo ""
+        
+    - name: 5️⃣ Final Check
+      run: |
+        echo "🎯 همه مراحل انجام شد!"
