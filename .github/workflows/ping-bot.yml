@@ -3,7 +3,7 @@ name: Test Bale Bot Webhook
 on:
   workflow_dispatch:        # اجرای دستی
   schedule:
-    - cron: '*/10 * * * *'  # هر ۱۰ دقیقه تست کنه
+    - cron: '* * * * *'  # هر ۱۰ دقیقه تست کنه
 
 jobs:
   test-bot:
