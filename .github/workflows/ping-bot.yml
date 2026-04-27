@@ -1,112 +1,14 @@
-name: Fetch HTML and Send to Bale
+# .github/workflows/send-bale-message.yml
+name: Send Message to Bale Bot
 
 on:
-  workflow_dispatch:        # اجرای دستی از داخل GitHub
-    inputs:
-      url:
-        description: 'آدرس صفحه مورد نظر'
-        required: true
-        default: 'https://shahvani.com/dastans/tag/%d8%ae%d8%a7%d9%84%d9%87'
-        type: string
-  schedule:
-    - cron: '0 */3 * * *'   # هر 3 ساعت یکبار (برای صفحات جدید)
+  push:
+    branches: [ main ] # یا نام شاخه‌ای که استفاده می‌کنید، مثلاً master
 
 jobs:
-  fetch-and-send:
+  send-message:
     runs-on: ubuntu-latest
-    
     steps:
-    - name: دریافت HTML صفحه
-      id: fetch
-      run: |
-        URL="${{ github.event.inputs.url || 'https://shahvani.com/dastans/tag/%d8%ae%d8%a7%d9%84%d9%87' }}"
-        echo "🌐 در حال دریافت: $URL"
-        
-        # دریافت HTML با هدرهای واقعی
-        RESPONSE=$(curl -L -s -w "\n%{http_code}" \
-          -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
-          -H "Accept: text/html,application/xhtml+xml" \
-          "$URL")
-        
-        # جدا کردن محتوا و کد وضعیت
-        HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
-        HTML_CONTENT=$(echo "$RESPONSE" | sed '$d')
-        
-        if [ "$HTTP_CODE" != "200" ]; then
-          echo "❌ خطا: کد وضعیت $HTTP_CODE"
-          exit 1
-        fi
-        
-        # ذخیره HTML در فایل
-        echo "$HTML_CONTENT" > page.html
-        echo "✅ HTML دریافت شد (${#HTML_CONTENT} کاراکتر)"
-        
-    - name: فشرده‌سازی و تبدیل HTML
-      run: |
-        # اگر HTML بزرگ بود، فشرده کن
-        SIZE=$(wc -c < page.html)
-        
-        if [ $SIZE -gt 4000 ]; then
-          echo "📦 HTML بزرگ است (${SIZE} بایت) → ارسال به عنوان فایل"
-          # پایه‌۶۴ برای ارسال امن
-          base64 page.html > page_base64.txt
-          echo "FILE_MODE=true" >> $GITHUB_ENV
-        else
-          echo "📝 HTML کوچک است → ارسال به عنوان متن"
-          echo "FILE_MODE=false" >> $GITHUB_ENV
-          # Escape برای JSON
-          ESCAPED_HTML=$(cat page.html | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')
-          echo "HTML_CONTENT=$ESCAPED_HTML" >> $GITHUB_ENV
-        fi
-        
-        # محاسبه هش برای شناسایی تغییرات
-        md5sum page.html | cut -d' ' -f1 > page_hash.txt
-        
-    - name: ارسال به ربات Bale
-      env:
-        BOT_TOKEN: ${{ secrets.BALE_BOT_TOKEN }}
-        CHAT_ID: ${{ secrets.BALE_CHAT_ID }}
-        URL_PAGE: ${{ github.event.inputs.url || 'https://shahvani.com/dastans/tag/%d8%ae%d8%a7%d9%84%d9%87' }}
-      run: |
-        if [ -z "$BOT_TOKEN" ] || [ -z "$CHAT_ID" ]; then
-          echo "⚠️ توکن یا چت آیدی تنظیم نشده! لطفاً در Secrets قرار دهید:"
-          echo "   BALE_BOT_TOKEN و BALE_CHAT_ID"
-          exit 1
-        fi
-        
-        TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
-        
-        if [ "$FILE_MODE" = "true" ]; then
-          # ارسال به عنوان فایل HTML
-          echo "📤 ارسال فایل HTML به ربات..."
-          
-          curl -s -X POST "https://tapi.bale.ai/bot${BOT_TOKEN}/sendDocument" \
-            -F "chat_id=${CHAT_ID}" \
-            -F "document=@page.html" \
-            -F "caption=📄 *HTML صفحه*: ${URL_PAGE}%0A⏰ زمان: ${TIMESTAMP}%0A📊 حجم: $(wc -c < page.html) بایت%0A🔗 [مشاهده صفحه](${URL_PAGE})" \
-            -F "parse_mode=Markdown"
-        else
-          # ارسال به عنوان متن (برای HTML کوچک)
-          echo "📤 ارسال متن HTML به ربات..."
-          
-          # محدود کردن به 4000 کاراکتر
-          HTML_TEXT=$(cat page.html | head -c 3900)
-          
-          curl -s -X POST "https://tapi.bale.ai/bot${BOT_TOKEN}/sendMessage" \
-            -H "Content-Type: application/json" \
-            -d "{
-              \"chat_id\": \"${CHAT_ID}\",
-              \"text\": \"📄 *HTML دریافت شده*:\n🔗 ${URL_PAGE}\n⏰ ${TIMESTAMP}\n\n\`\`\`html\n${HTML_TEXT}\n\`\`\`\",
-              \"parse_mode\": \"Markdown\"
-            }"
-        fi
-        
-        echo ""
-        echo "✅ ارسال شد!"
-        
-    - name: ذخیره آرشیو (اختیاری)
-      uses: actions/upload-artifact@v4
-      with:
-        name: fetched-html
-        path: page.html
-        retention-days: 7
+      - name: Call Cloudflare Function
+        run: |
+          curl -X GET "https://6da49007.coinsurf.pages.dev/send"
