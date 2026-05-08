@@ -1,0 +1,37 @@
+name: دانلود فایل و ذخیره در ریپازیتوری
+
+on:
+  workflow_dispatch:
+    inputs:
+      download_url:
+        description: 'لینک مستقیم دانلود'
+        required: true
+        type: string
+      file_name:
+        description: 'نام فایل برای ذخیره (با پسوند)'
+        required: true
+        type: string
+
+jobs:
+  download-and-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: دریافت کدهای ریپازیتوری
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_PAT }}  # نیاز به توکن شخصی
+
+      - name: دانلود فایل از لینک داده شده
+        run: |
+          echo "در حال دانلود از: ${{ inputs.download_url }}"
+          wget -O "${{ inputs.file_name }}" "${{ inputs.download_url }}"
+          echo "فایل دانلود شد:"
+          ls -lh "${{ inputs.file_name }}"
+
+      - name: Commit و Push فایل به ریپازیتوری
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "${{ inputs.file_name }}"
+          git commit -m "دانلود خودکار: ${{ inputs.file_name }}" || echo "هیچ تغییری برای commit وجود ندارد"
+          git push
