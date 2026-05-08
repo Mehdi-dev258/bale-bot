@@ -1,4 +1,4 @@
-name: دانلود فایل و ذخیره در ریپازیتوری
+name: دانلود فایل و ذخیره پارت‌ها در ریپازیتوری
 
 on:
   workflow_dispatch:
@@ -13,25 +13,32 @@ on:
         type: string
 
 jobs:
-  download-and-commit:
+  download-split-commit:
     runs-on: ubuntu-latest
     steps:
       - name: دریافت کدهای ریپازیتوری
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GH_PAT }}  # نیاز به توکن شخصی
+          token: ${{ secrets.GH_PAT }}
 
       - name: دانلود فایل از لینک داده شده
         run: |
-          echo "در حال دانلود از: ${{ inputs.download_url }}"
+          echo "در حال دانلود: ${{ inputs.download_url }}"
           wget -O "${{ inputs.file_name }}" "${{ inputs.download_url }}"
           echo "فایل دانلود شد:"
           ls -lh "${{ inputs.file_name }}"
 
-      - name: Commit و Push فایل به ریپازیتوری
+      - name: تقسیم فایل به پارت‌های ۹۰ مگابایتی
+        run: |
+          mkdir -p parts
+          split -b 90M -d "${{ inputs.file_name }}" "parts/${{ inputs.file_name }}.part_"
+          echo "پارت‌ها ساخته شد:"
+          ls -lh parts/
+
+      - name: Commit و Push پارت‌ها به ریپازیتوری
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add "${{ inputs.file_name }}"
-          git commit -m "دانلود خودکار: ${{ inputs.file_name }}" || echo "هیچ تغییری برای commit وجود ندارد"
+          git add parts/
+          git commit -m "پارت‌های فایل ${{ inputs.file_name }}" || echo "هیچ تغییری برای commit وجود ندارد"
           git push
