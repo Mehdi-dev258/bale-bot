@@ -1,14 +1,49 @@
-# .github/workflows/send-bale-message.yml
-name: Send Message to Bale Bot
+name: تست سیستم دانلود و تقسیم فایل
 
 on:
-  push:
-    branches: [ main ] # یا نام شاخه‌ای که استفاده می‌کنید، مثلاً master
+  workflow_dispatch: # این اجازه می‌دهد با دکمه اجرا شود
 
 jobs:
-  send-message:
+  test-system:
     runs-on: ubuntu-latest
     steps:
-      - name: Call Cloudflare Function
+      - name: نمایش فضای دیسک اولیه
         run: |
-          curl -X GET "https://6da49007.coinsurf.pages.dev/send"
+          echo "فضای موجود در ابتدا:"
+          df -h /dev/root
+
+      - name: دانلود یک فایل تستی (عکس از اینترنت)
+        run: |
+          echo "در حال دانلود یک فایل تست..."
+          # این یک فایل ISO کوچک حدود 26 مگابایت است (از آرشیو اوبونتو)
+          wget -O test-file.iso "https://releases.ubuntu.com/22.04/ubuntu-22.04.5-live-server-amd64.iso.zsync"
+          # اگر می‌خواهید یک فایل بزرگتر تست کنید:
+          # wget -O test-file.iso "https://cdn.pvvstream.pro/videos/-104847595/456239180/vid_240p.mp4?rs=240000&rb=1398101&secure=d6kGa4EtUoC5s4jmysbdmw%3D%3D%2C1778232889&dl=1"
+          echo "دانلود کامل شد. سایز فایل:"
+          ls -lh test-file.iso
+
+      - name: تقسیم فایل به پارت‌های کوچک (مثلاً ۵ مگابایتی برای تست)
+        run: |
+          mkdir -p parts
+          split -b 5M -d test-file.iso parts/part_
+          echo "فایل‌های پارت ساخته شد:"
+          ls -lh parts/
+          echo "تعداد پارت‌ها:"
+          ls parts/ | wc -l
+
+      - name: تست بازسازی فایل از پارت‌ها (بررسی صحت کار)
+        run: |
+          cat parts/part_* > reconstructed-file.iso
+          echo "مقایسه فایل اصلی با بازسازی‌شده:"
+          md5sum test-file.iso reconstructed-file.iso
+          if [ "$(md5sum test-file.iso | cut -d ' ' -f 1)" = "$(md5sum reconstructed-file.iso | cut -d ' ' -f 1)" ]; then
+            echo "✅ موفقیت: فایل‌ها یکسان هستند. تقسیم‌بندی صحیح است."
+          else
+            echo "❌ خطا: فایل‌ها متفاوت هستند!"
+            exit 1
+          fi
+
+      - name: نمایش فضای دیسک نهایی
+        run: |
+          echo "فضای موجود در انتها:"
+          df -h /dev/root
